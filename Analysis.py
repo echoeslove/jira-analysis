@@ -1,7 +1,15 @@
-import pandas as pd
-from pyecharts.charts import Bar, Line, Page
-import pyecharts.options as opts
+from datetime import datetime
+
 import numpy as np
+import pandas as pd
+import pyecharts.options as opts
+from pyecharts.charts import Bar, Line, Page
+
+
+def get_week_list():
+    start = pd.Timestamp('2022-03-28').week
+    end = pd.Timestamp(datetime.now()).week
+    return start, end
 
 
 def get_delay_list():
@@ -15,8 +23,12 @@ def get_delay_list():
     delay_sheet['预估提测时间'] = pd.to_datetime(delay_sheet['预估提测时间'])
     delay_sheet_local = delay_sheet.groupby(
         [np.int16(delay_sheet['预估提测时间'].dt.isocalendar().week),
-         delay_sheet['难度级别']])['任务号'].agg('size').unstack()
-    return delay_sheet_local
+         delay_sheet['难度级别']]
+    )['任务号'].agg('size').unstack()
+    delay_sheet_local_2 = delay_sheet.groupby(
+        [np.int16(delay_sheet['预估提测时间'].dt.isocalendar().week)]
+    )['任务号'].agg('size')
+    return delay_sheet_local, delay_sheet_local_2
 
 
 def get_bug_list():
@@ -32,10 +44,82 @@ def get_bug_list():
     bug_sheet['创建日期'] = pd.to_datetime(bug_sheet['创建日期'])
     bug_sheet_local = bug_sheet.groupby(
         [np.int16(bug_sheet['创建日期'].dt.isocalendar().week),
-         bug_sheet['严重程度']])['Key'].agg('size').unstack()
+         bug_sheet['严重程度']]
+    )['Key'].agg('size').unstack()
     bug_sheet_local_2 = bug_sheet.groupby(
-        [np.int16(bug_sheet['创建日期'].dt.isocalendar().week)])['Key'].agg('size')
+        [np.int16(bug_sheet['创建日期'].dt.isocalendar().week)]
+    )['Key'].agg('size')
     return bug_sheet_local, bug_sheet_local_2
+
+
+def fill(df):
+    start, end = get_week_list()
+    arr = list(df.index)
+    for i in range(start, end):
+        if(i not in arr):
+            df.loc[i] = {}
+    df.reset_index()
+    df = df.reindex(index=list(range(start, end)))
+    return df
+
+
+def fill_2(df):
+    start, end = get_week_list()
+    arr = list(df.index)
+    for i in range(start, end):
+        if(i not in arr):
+            df.loc[i] = '0'
+    df = df.reindex(index=list(range(start, end)))
+    return df
+
+
+def render_delay():
+    """渲染延期图表
+
+    Returns:
+        _type_: 延期图表
+    """
+    # 延期图表
+    delay_df, delay_df_2 = get_delay_list()
+    delay_df = fill(delay_df)
+    delay_df_2 = fill_2(delay_df_2)
+    # 延期柱状图 按难易程度分类
+    x_data = list(delay_df.index)
+    y_data_easy = list(delay_df['简单'])
+    y_data_normal = list(delay_df['一般'])
+    delay_bar = (
+        Bar()
+        .add_xaxis(x_data)
+        .add_yaxis('简单', y_data_easy)
+        .add_yaxis('一般', y_data_normal)
+        .set_global_opts(title_opts=opts.TitleOpts(title="延期汇总"))
+    )
+    # 延期折线图 统计数量
+    x_data = list(map(str, delay_df_2.index))
+    y_data = list(map(int, delay_df_2.values))
+    delay_line = (
+        Line()
+        .set_global_opts(
+            tooltip_opts=opts.TooltipOpts(is_show=False),
+            xaxis_opts=opts.AxisOpts(type_="category"),
+            yaxis_opts=opts.AxisOpts(
+                type_="value",
+                axistick_opts=opts.AxisTickOpts(is_show=True),
+                splitline_opts=opts.SplitLineOpts(is_show=True),
+            ),
+        )
+        .add_xaxis(x_data)
+        .add_yaxis(
+            series_name="Total",
+            y_axis=y_data,
+            symbol="emptyCircle",
+            is_symbol_show=True,
+            label_opts=opts.LabelOpts(is_show=False),
+        )
+    )
+    delay_bar.overlap(delay_line)
+    delay_bar.render('delay.html')
+    return delay_bar
 
 
 def render_bug():
@@ -84,6 +168,7 @@ def render_bug():
             label_opts=opts.LabelOpts(is_show=False),
         )
     )
+
     # 汇总到一个图中
     bug_bar.overlap(bug_line)
     bug_bar.render('bug.html')
@@ -96,19 +181,9 @@ def render():
     Args:
         bug_df (_type_): 通过pandas生成的df
     """
-    delay_df = get_delay_list()
-    # 延期图表
-    delay_bar = Bar()
-    delay_bar.add_xaxis(list(delay_df.index))
-    delay_bar.add_yaxis('简单', list(delay_df['简单']))
-    delay_bar.add_yaxis('一般', list(delay_df['一般']))
-    # delay_bar.add_yaxis('较难', list(delay_df['较难']))
-    # delay_bar.add_yaxis('难', list(delay_df['难']))
-    # delay_bar.render('delay.html')
     page = Page()
-    page.add(delay_bar, render_bug())
+    page.add(render_delay(), render_bug())
     page.render('summary.html')
 
 
 render()
-# render_bug()
