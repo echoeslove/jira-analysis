@@ -239,6 +239,43 @@ def render_bug():
     return bug_bar
 
 
+def render_bug_per_pers():
+    bug_sheet = pd.read_excel(io=excel_dir,
+                              sheet_name='bug', header=0)
+    bug_sheet['创建日期'] = pd.to_datetime(bug_sheet['创建日期'])
+    bug_sheet_local = bug_sheet.groupby(
+        [np.int16(bug_sheet['创建日期'].dt.isocalendar().week),
+         bug_sheet['经办人']]
+    )['Key'].count()
+    bug_per_person = bug_sheet_local.unstack()
+    x_data = list(map(str, bug_per_person.index))
+    bug_top5_line = (
+        Line()
+        .set_global_opts(
+            title_opts=opts.TitleOpts(title="Bug趋势"),
+            tooltip_opts=opts.TooltipOpts(is_show=False),
+            legend_opts=opts.LegendOpts(pos_right="0", orient="vertical"),
+            xaxis_opts=opts.AxisOpts(type_="category", boundary_gap=False),
+            yaxis_opts=opts.AxisOpts(
+                type_="value",
+                axistick_opts=opts.AxisTickOpts(is_show=True),
+                splitline_opts=opts.SplitLineOpts(is_show=True),
+            ),
+        ).add_xaxis(x_data)
+    )
+    for col in bug_per_person.columns:
+        y_data = list(bug_per_person[col])
+        y_data = np.nan_to_num(y_data, nan=0)
+        bug_top5_line.add_yaxis(
+            series_name=col,
+            y_axis=y_data,
+            symbol="emptyCircle",
+            is_symbol_show=True,
+            label_opts=opts.LabelOpts(is_show=True),)
+    bug_top5_line.render("bug_top5.html")
+    return bug_top5_line
+
+
 def render():
     """生成bug走势图
 
@@ -248,12 +285,9 @@ def render():
     page = Page()
     page.add(render_delay(),
              render_delay_pie(),
-             render_bug())
+             render_bug(),
+             render_bug_per_pers())
     page.render('summary.html')
 
 
-# ret = get_excel_groupby_result(excel_dir=excel_dir, sheet_name='jira-delay',
-#                                base_groupby_col='预估提测时间', groupby_col='难度级别',
-#                                target_col='任务号')
-# print(ret)
 render()
