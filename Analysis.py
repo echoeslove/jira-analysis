@@ -6,7 +6,8 @@ import pyecharts.options as opts
 from pyecharts.charts import Bar, Line, Pie, Page
 
 
-excel_dir = './技术分汇总0606.xlsx'
+excel_dir = './技术分汇总0627.xlsx'
+excel_name = '技术分汇总0627.xlsx'
 
 
 def get_week_list():
@@ -16,7 +17,7 @@ def get_week_list():
         _type_: 开始的周序号，当前周序号
     """
     start = pd.Timestamp('2022-03-28').week
-    end = pd.Timestamp(datetime.now()).week
+    end = pd.Timestamp(datetime.now()).week + 1
     return start, end
 
 
@@ -114,17 +115,8 @@ def render_delay():
         _type_: 延期图表
     """
     # 延期图表
-    delay_df = get_excel_groupby_result(excel_dir=excel_dir,
-                                        sheet_name='jira-delay',
-                                        base_groupby_col='预估提测时间',
-                                        groupby_col='难度级别',
-                                        target_col='任务号')
+    delay_df, delay_df_2 = get_delay_list()
     delay_df = fill(delay_df)
-    delay_df_2 = get_excel_groupby_result(excel_dir=excel_dir,
-                                          sheet_name='jira-delay',
-                                          base_groupby_col='预估提测时间',
-                                          groupby_col='',
-                                          target_col='任务号')
     delay_df_2 = fill_2(delay_df_2)
     # 延期柱状图 按难易程度分类
     x_data = list(delay_df.index)
@@ -239,7 +231,7 @@ def render_bug():
     return bug_bar
 
 
-def render_bug_per_pers():
+def render_bug_per_pers(person_group):
     bug_sheet = pd.read_excel(io=excel_dir,
                               sheet_name='bug', header=0)
     bug_sheet['创建日期'] = pd.to_datetime(bug_sheet['创建日期'])
@@ -252,7 +244,7 @@ def render_bug_per_pers():
     bug_top5_line = (
         Line()
         .set_global_opts(
-            title_opts=opts.TitleOpts(title="Bug趋势"),
+            title_opts=opts.TitleOpts(title="Bug趋势-"+person_group),
             tooltip_opts=opts.TooltipOpts(is_show=False),
             legend_opts=opts.LegendOpts(pos_right="0", orient="vertical"),
             xaxis_opts=opts.AxisOpts(type_="category", boundary_gap=False),
@@ -263,15 +255,23 @@ def render_bug_per_pers():
             ),
         ).add_xaxis(x_data)
     )
+    person_sheet = pd.read_excel(io=excel_dir,
+                                 sheet_name='team-member', header=0)
+    persons = []
+    for idx, row in person_sheet.iterrows():
+        if (row['分组'] == person_group):
+            persons.append(row['名称'])
     for col in bug_per_person.columns:
-        y_data = list(bug_per_person[col])
-        y_data = np.nan_to_num(y_data, nan=0)
-        bug_top5_line.add_yaxis(
-            series_name=col,
-            y_axis=y_data,
-            symbol="emptyCircle",
-            is_symbol_show=True,
-            label_opts=opts.LabelOpts(is_show=True),)
+        for p in persons:
+            if(p in col):
+                y_data = list(bug_per_person[col])
+                y_data = np.nan_to_num(y_data, nan=0)
+                bug_top5_line.add_yaxis(
+                    series_name=col,
+                    y_axis=y_data,
+                    symbol="emptyCircle",
+                    is_symbol_show=True,
+                    label_opts=opts.LabelOpts(is_show=True),)
     bug_top5_line.render("bug_top5.html")
     return bug_top5_line
 
@@ -286,8 +286,46 @@ def render():
     page.add(render_delay(),
              render_delay_pie(),
              render_bug(),
-             render_bug_per_pers())
+             render_bug_per_pers('平台'),
+             render_bug_per_pers('数据'),
+             render_bug_per_pers('营销中台'),
+             render_bug_per_pers('运营'))
     page.render('summary.html')
 
 
+def calculate_bug_score():
+    bug_sheet = pd.read_excel(io=excel_dir,
+                              sheet_name='bug', header=0)
+    bug_sheet['创建日期'] = pd.to_datetime(bug_sheet['创建日期'])
+    bug_sheet_local = bug_sheet.groupby(
+        [np.int16(bug_sheet['创建日期'].dt.month),
+         bug_sheet['严重程度'], bug_sheet['经办人']]
+    )['Key'].agg('size').unstack()
+    print(bug_sheet_local)
+    members = []
+    score = []
+    for col in bug_sheet_local.columns:
+        # print(col)
+        bug_sheet_per_category = bug_sheet_local[col].unstack()
+        # print(bug_sheet_local[col])
+        score_list = np.nan_to_num(
+            bug_sheet_per_category['Blocker'], nan=0)*8 +\
+            np.nan_to_num(bug_sheet_per_category['Critical'], nan=0)*5 +\
+            np.nan_to_num(bug_sheet_per_category['Major'], nan=0)*3 +\
+            np.nan_to_num(bug_sheet_per_category['Minor'], nan=0)*1 +\
+            np.nan_to_num(bug_sheet_per_category['Trivial'], nan=0) * 0.5
+        member_score = []
+        score_total = 0
+        for i in score_list:
+            s = 100 - i
+            score_total += s
+            member_score.append(s)
+        score_total = score_total / len(score_list)
+        print(bug_sheet_local[col].name + "\t" +
+              str(score_total) + "\t" + str(member_score))
+        members.append(bug_sheet_local[col].name)
+        score.append(score_total)
+
+
 render()
+calculate_bug_score()
